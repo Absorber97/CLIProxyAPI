@@ -36,6 +36,10 @@ const (
 	PinnedAuthMetadataKey = "pinned_auth_id"
 	// SelectedAuthMetadataKey stores the auth ID selected by the scheduler.
 	SelectedAuthMetadataKey = "selected_auth_id"
+	// SelectedAuthProviderMetadataKey stores the upstream provider key of the selected auth.
+	SelectedAuthProviderMetadataKey = "selected_auth_provider"
+	// SelectedAuthProviderCallbackMetadataKey carries an optional callback invoked with the selected auth provider.
+	SelectedAuthProviderCallbackMetadataKey = "selected_auth_provider_callback"
 	// SelectedAuthCallbackMetadataKey carries an optional callback invoked with the selected auth ID.
 	SelectedAuthCallbackMetadataKey = "selected_auth_callback"
 	// SelectedAuthIndexMetadataKey stores the stable index of the auth selected by the scheduler.

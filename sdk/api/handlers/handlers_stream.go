@@ -329,6 +329,8 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 		Payload: payload,
 	}
 	afterAuthCapture := &requestAfterAuthCapture{}
+	receiptCapture := &routeReceiptCapture{}
+	receiptCapture.install(reqMeta)
 	lifecycle := h.newRequestLifecycleTracker(ctx, entryProtocol, normalizedModel, originalRequestedModel, true, reqMeta, execOptions.SkipInterceptorPluginID)
 	opts := coreexecutor.Options{
 		Stream:                      true,
@@ -581,6 +583,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 	}
 
 	upstreamHeaders := downstreamHeadersAfterInterceptors(baseStreamHeaders, rawStreamHeaders, passthroughHeadersEnabled)
+	upstreamHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol).apply(upstreamHeaders)
 	if upstreamHeaders == nil && (passthroughHeadersEnabled || streamInterceptorsActive) {
 		upstreamHeaders = make(http.Header)
 	}

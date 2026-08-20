@@ -455,6 +455,9 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 	if len(messageBlocks) == 0 && len(systemBlocks) > 0 {
 		messageBlocks = append(messageBlocks, []byte(`{"role":"user","content":[{"type":"text","text":""}]}`))
 	}
+	if !preserveEmptyThinkingBlocks {
+		messageBlocks = dropTrailingAssistantThinking(messageBlocks)
+	}
 	out = common.SetRawArrayItems(out, "messages", messageBlocks)
 	if len(systemBlocks) > 0 {
 		out, _ = sjson.SetRawBytes(out, "system", common.JoinRawArray(systemBlocks))
@@ -604,6 +607,55 @@ func convertResponsesReasoningToClaudeThinking(item gjson.Result, preserveEmptyT
 	thinkingPart, _ = sjson.SetBytes(thinkingPart, "thinking", thinkingText)
 	thinkingPart, _ = sjson.SetBytes(thinkingPart, "signature", signature)
 	return thinkingPart
+}
+
+// dropTrailingAssistantThinking removes the thinking tail from an assistant
+// message. Anthropic rejects an assistant message whose final block is
+// thinking or redacted_thinking, which a Responses history reaches whenever a
+// turn stops after reasoning, and a message left with nothing else goes with
+// it. The compat path keeps its unsigned thinking because providers behind it
+// accept the block and rely on it.
+func dropTrailingAssistantThinking(messages [][]byte) [][]byte {
+	resolved := make([][]byte, 0, len(messages))
+	for _, message := range messages {
+		if gjson.GetBytes(message, "role").String() != "assistant" {
+			resolved = append(resolved, message)
+			continue
+		}
+		content := gjson.GetBytes(message, "content")
+		if !content.IsArray() {
+			resolved = append(resolved, message)
+			continue
+		}
+		blocks := content.Array()
+		end := len(blocks)
+		for end > 0 && isClaudeThinkingBlock(blocks[end-1]) {
+			end--
+		}
+		if end == len(blocks) {
+			resolved = append(resolved, message)
+			continue
+		}
+		if end == 0 {
+			continue
+		}
+		kept := make([][]byte, 0, end)
+		for _, block := range blocks[:end] {
+			kept = append(kept, []byte(block.Raw))
+		}
+		trimmed, _ := sjson.SetRawBytes(message, "content", common.JoinRawArray(kept))
+		resolved = append(resolved, trimmed)
+	}
+	return resolved
+}
+
+func isClaudeThinkingBlock(block gjson.Result) bool {
+	switch block.Get("type").String() {
+	case "thinking", "redacted_thinking":
+		return true
+	default:
+		return false
+	}
 }
 
 // responsesRedactedThinkingData reports whether encrypted_content carries an

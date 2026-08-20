@@ -801,9 +801,7 @@ func TestExecuteStreamWithAuthManager_HeaderPassthroughDisabledByDefault(t *test
 	if string(got) != "ok" {
 		t.Fatalf("expected payload ok, got %q", string(got))
 	}
-	if upstreamHeaders != nil {
-		t.Fatalf("expected nil upstream headers when passthrough is disabled, got %#v", upstreamHeaders)
-	}
+	assertOnlyRouteReceiptHeaders(t, upstreamHeaders)
 }
 
 func TestExecuteStreamWithAuthManager_DoesNotRetryAfterFirstByte(t *testing.T) {
