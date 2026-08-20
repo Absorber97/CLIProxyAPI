@@ -118,6 +118,8 @@ func TestApplyClaudeHeaders_FastModeBetaIsConditional(t *testing.T) {
 			}
 			if got := req.Header.Get("Anthropic-Beta"); got != tt.want {
 				t.Fatalf("Anthropic-Beta = %q, want %q", got, tt.want)
+			} else if strings.Contains(got, claudeContext1MBeta) {
+				t.Fatalf("Anthropic-Beta = %q, must not include retired Opus 5 context beta", got)
 			}
 		})
 	}

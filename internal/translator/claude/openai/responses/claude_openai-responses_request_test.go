@@ -92,8 +92,8 @@ func TestConvertOpenAIResponsesRequestToClaude_ReasoningItemToThinkingBlock(t *t
 	}
 }
 
-func TestConvertOpenAIResponsesRequestToClaude_SignatureOnlyReasoningFlushesBeforeUser(t *testing.T) {
-	rawSignature, expectedSignature := testClaudeResponsesThinkingSignature(t)
+func TestConvertOpenAIResponsesRequestToClaude_SignatureOnlyReasoningDropsBeforeUser(t *testing.T) {
+	rawSignature, _ := testClaudeResponsesThinkingSignature(t)
 	raw := []byte(`{
 		"model":"claude-test",
 		"input":[
@@ -113,18 +113,11 @@ func TestConvertOpenAIResponsesRequestToClaude_SignatureOnlyReasoningFlushesBefo
 	out := ConvertOpenAIResponsesRequestToClaude("claude-test", raw, false)
 	root := gjson.ParseBytes(out)
 
-	thinking := root.Get("messages.0.content.0")
-	if got := thinking.Get("type").String(); got != "thinking" {
-		t.Fatalf("first content type = %q, want thinking. Output: %s", got, string(out))
+	if got := root.Get("messages.#").Int(); got != 1 {
+		t.Fatalf("message count = %d, want 1. Output: %s", got, string(out))
 	}
-	if got := thinking.Get("signature").String(); got != expectedSignature {
-		t.Fatalf("thinking signature = %q, want %q", got, expectedSignature)
-	}
-	if got := thinking.Get("thinking").String(); got != "" {
-		t.Fatalf("thinking text = %q, want empty", got)
-	}
-	if got := root.Get("messages.1.role").String(); got != "user" {
-		t.Fatalf("second message role = %q, want user. Output: %s", got, string(out))
+	if got := root.Get("messages.0.role").String(); got != "user" {
+		t.Fatalf("first message role = %q, want user. Output: %s", got, string(out))
 	}
 }
 
@@ -210,6 +203,11 @@ func TestConvertOpenAIResponsesRequestToClaude_ReasoningContentTextRebuildsThink
 			},
 			{
 				"type":"message",
+				"role":"assistant",
+				"content":[{"type":"output_text","text":"visible answer"}]
+			},
+			{
+				"type":"message",
 				"role":"user",
 				"content":[{"type":"input_text","text":"continue"}]
 			}
@@ -238,6 +236,11 @@ func TestConvertOpenAIResponsesRequestToClaude_SummaryWinsOverDuplicatedReasonin
 				"encrypted_content":"` + rawSignature + `",
 				"summary":[{"type":"summary_text","text":"chain of thought"}],
 				"content":[{"type":"reasoning_text","text":"chain of thought"}]
+			},
+			{
+				"type":"message",
+				"role":"assistant",
+				"content":[{"type":"output_text","text":"visible answer"}]
 			},
 			{
 				"type":"message",

@@ -1222,9 +1222,7 @@ func TestHandlerStreamSkipsInterceptorsWhenHostReportsNoStreamInterceptors(t *te
 	if string(got) != "payload" {
 		t.Fatalf("stream payload = %q, want payload", got)
 	}
-	if upstreamHeaders != nil {
-		t.Fatalf("upstream headers = %#v, want nil without passthrough or stream interceptors", upstreamHeaders)
-	}
+	assertOnlyRouteReceiptHeaders(t, upstreamHeaders)
 	if streamCalls != 0 {
 		t.Fatalf("stream interceptor calls = %d, want 0", streamCalls)
 	}
@@ -1479,5 +1477,20 @@ func TestHandlerResponseInterceptorSeesRawHeadersWhenPassthroughDisabled(t *test
 	}
 	if headers.Get("X-Upstream") != "" {
 		t.Fatalf("headers leaked raw upstream header with passthrough disabled: %#v", headers)
+	}
+}
+
+// assertOnlyRouteReceiptHeaders fails when any header other than the CPA-managed
+// route receipt reaches the client, which is what disabled passthrough means now
+// that every response carries route evidence.
+func assertOnlyRouteReceiptHeaders(t *testing.T, headers http.Header) {
+	t.Helper()
+	for name := range headers {
+		if !IsCPAReservedResponseHeader(name) {
+			t.Fatalf("upstream header %q leaked with passthrough disabled", name)
+		}
+	}
+	if headers.Get(RouteProviderHeader) == "" {
+		t.Fatal("route provider evidence is missing")
 	}
 }

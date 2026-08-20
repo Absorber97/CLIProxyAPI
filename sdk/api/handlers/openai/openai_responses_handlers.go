@@ -766,10 +766,10 @@ func isCodexResponsesClientRequest(c *gin.Context) bool {
 	}
 
 	switch originator := strings.ToLower(strings.TrimSpace(c.GetHeader("Originator"))); originator {
-	case "codex desktop", "codex-tui", "codex_cli_rs":
+	case "codex desktop", "codex-tui", "codex_cli_rs", "codex_exec":
 		return true
 	default:
-		return strings.HasPrefix(originator, "codex desktop/") || strings.HasPrefix(originator, "codex-tui/") || strings.HasPrefix(originator, "codex_cli_rs/")
+		return strings.HasPrefix(originator, "codex desktop/") || strings.HasPrefix(originator, "codex-tui/") || strings.HasPrefix(originator, "codex_cli_rs/") || strings.HasPrefix(originator, "codex_exec/")
 	}
 }
 
