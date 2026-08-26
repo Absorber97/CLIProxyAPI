@@ -486,6 +486,9 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
 	if h == nil || h.Cfg == nil {
 		return payload
 	}
+	if preserveNativeCodexCollaborationSchema(payload) {
+		return payload
+	}
 
 	requestCtx := context.Background()
 	if c != nil && c.Request != nil {
@@ -511,6 +514,58 @@ func (h *OpenAIResponsesAPIHandler) prepareCodexMultiAgentV2Tools(c *gin.Context
 	return updated
 }
 
+func preserveNativeCodexCollaborationSchema(payload []byte) bool {
+	model := strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+	if model == "" {
+		return false
+	}
+
+	registryModels := registry.GetGlobalRegistry()
+	foundOpenAICompatibility := false
+	for _, provider := range registryModels.GetModelProviders(model) {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(provider)), "openai-compat") {
+			continue
+		}
+		foundOpenAICompatibility = true
+		if info := registryModels.GetModelInfo(model, provider); info != nil && info.IsCompat {
+			return false
+		}
+	}
+	return foundOpenAICompatibility
+}
+
+func omniRouteTextRequestHasImage(payload []byte) bool {
+	if !strings.HasPrefix(strings.TrimSpace(gjson.GetBytes(payload, "model").String()), "omni-") {
+		return false
+	}
+	var decoded any
+	if json.Unmarshal(payload, &decoded) != nil {
+		return false
+	}
+	var containsImage func(any) bool
+	containsImage = func(value any) bool {
+		switch typed := value.(type) {
+		case map[string]any:
+			if partType, _ := typed["type"].(string); partType == "input_image" {
+				return true
+			}
+			for _, child := range typed {
+				if containsImage(child) {
+					return true
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if containsImage(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return containsImage(decoded)
+}
+
 // Responses handles the /v1/responses endpoint.
 // It determines whether the request is for a streaming or non-streaming response
 // and calls the appropriate handler based on the model provider.
@@ -524,6 +579,15 @@ func (h *OpenAIResponsesAPIHandler) Responses(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, handlers.ErrorResponse{
 			Error: handlers.ErrorDetail{
 				Message: fmt.Sprintf("Invalid request: %v", err),
+				Type:    "invalid_request_error",
+			},
+		})
+		return
+	}
+	if omniRouteTextRequestHasImage(rawJSON) {
+		c.JSON(http.StatusBadRequest, handlers.ErrorResponse{
+			Error: handlers.ErrorDetail{
+				Message: "input_image is not supported for OmniRoute text routes",
 				Type:    "invalid_request_error",
 			},
 		})

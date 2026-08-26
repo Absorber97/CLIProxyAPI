@@ -90,13 +90,21 @@ func accountFingerprint(authID string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-func newRouteReceipt(meta map[string]any, capture *routeReceiptCapture, receiptID, model, requestedModel, sourceFormat, targetFormat string) routeReceipt {
+func newRouteReceipt(meta map[string]any, capture *routeReceiptCapture, receiptID, model, requestedModel, sourceFormat, targetFormat string, upstreamHeaders ...http.Header) routeReceipt {
 	provider, authID := capture.selected()
 	if provider == "" {
 		provider = metadataString(meta, coreexecutor.SelectedAuthProviderMetadataKey)
 	}
 	if authID == "" {
 		authID = metadataString(meta, coreexecutor.SelectedAuthMetadataKey)
+	}
+	if provider == "openai-compatible-codex-omniroute" && len(upstreamHeaders) == 1 {
+		leafProvider := strings.TrimSpace(upstreamHeaders[0].Get("X-Omniroute-Provider"))
+		leafModel := strings.TrimSpace(upstreamHeaders[0].Get("X-Omniroute-Model"))
+		if leafProvider != "" && leafModel != "" && isPrintableHeaderValue(leafProvider) && isPrintableHeaderValue(leafModel) {
+			provider = leafProvider
+			model = leafModel
+		}
 	}
 	return routeReceipt{
 		Receipt:        strings.TrimSpace(receiptID),

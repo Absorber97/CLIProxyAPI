@@ -1056,6 +1056,50 @@ func TestHandlerStreamInterceptorRewritesAndDropsChunks(t *testing.T) {
 	}
 }
 
+func TestHandlerStreamRouteReceiptUsesImmutableOmniRouteHeaders(t *testing.T) {
+	model := "omni-gpt-sol"
+	executor := &interceptorCaptureExecutor{
+		provider: "openai-compatible-codex-omniroute",
+		stream: func(ctx context.Context, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (*coreexecutor.StreamResult, error) {
+			chunks := make(chan coreexecutor.StreamChunk, 1)
+			chunks <- coreexecutor.StreamChunk{Payload: []byte("data: [DONE]\n\n")}
+			close(chunks)
+			return &coreexecutor.StreamResult{
+				Headers: http.Header{
+					"Content-Type":         []string{"text/event-stream"},
+					"X-Omniroute-Provider": []string{"cx"},
+					"X-Omniroute-Model":    []string{"gpt-5.6-sol"},
+				},
+				Chunks: chunks,
+			}, nil
+		},
+	}
+	handler := newInterceptorHandler(t, model, executor, &sdkconfig.SDKConfig{PassthroughHeaders: false})
+	handler.SetPluginHost(&handlerInterceptorTestHost{
+		interceptStreamChunk: func(ctx context.Context, req pluginapi.StreamChunkInterceptRequest) pluginapi.StreamChunkInterceptResponse {
+			return pluginapi.StreamChunkInterceptResponse{
+				Headers: http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:    cloneBytes(req.Body),
+			}
+		},
+	})
+
+	dataChan, headers, errChan := handler.ExecuteStreamWithAuthManager(context.Background(), "openai", model, []byte(fmt.Sprintf(`{"model":%q}`, model)), "")
+	for range dataChan {
+	}
+	for errMsg := range errChan {
+		if errMsg != nil {
+			t.Fatalf("stream error = %+v", errMsg)
+		}
+	}
+	if got := headers.Get(RouteProviderHeader); got != "cx" {
+		t.Fatalf("route provider = %q, want cx from immutable upstream headers", got)
+	}
+	if got := headers.Get(RouteModelHeader); got != "gpt-5.6-sol" {
+		t.Fatalf("route model = %q, want gpt-5.6-sol from immutable upstream headers", got)
+	}
+}
+
 func TestHandlerStreamInterceptorLegacySchemaClonesRequestBodiesOnPayloadChunks(t *testing.T) {
 	model := "handler-interceptor-stream-legacy-clone-model"
 	executor := &interceptorCaptureExecutor{

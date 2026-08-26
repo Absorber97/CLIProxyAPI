@@ -907,7 +907,7 @@ func TestOpenAICompatExecutorStreamSkipsKeepAliveUntilDataLine(t *testing.T) {
 func TestOpenAICompatExecutorResponsesStreamFailsOnEOFWithoutDone(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"partial"},"finish_reason":null}]}` + "\n\n"))
+		_, _ = w.Write([]byte(`data: {"type":"response.output_text.delta","delta":"partial","item_id":"msg_1","output_index":0,"content_index":0}` + "\n\n"))
 	}))
 	defer server.Close()
 
@@ -951,7 +951,7 @@ func TestOpenAICompatExecutorResponsesStreamFailsOnEOFWithoutDone(t *testing.T) 
 	if !ok || statusErr.StatusCode() != http.StatusBadGateway {
 		t.Fatalf("stream error status = %v, want %d", streamErr, http.StatusBadGateway)
 	}
-	if !strings.Contains(streamErr.Error(), "closed before [DONE]") {
+	if !strings.Contains(streamErr.Error(), "closed before a terminal event") {
 		t.Fatalf("stream error does not explain the missing terminal marker: %v", streamErr)
 	}
 }

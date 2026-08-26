@@ -557,7 +557,7 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 	}
 
 	upstreamHeaders := downstreamHeadersAfterInterceptors(baseStreamHeaders, rawStreamHeaders, passthroughHeadersEnabled)
-	upstreamHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol).apply(upstreamHeaders)
+	upstreamHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol, baseStreamHeaders).apply(upstreamHeaders)
 	if upstreamHeaders == nil && (passthroughHeadersEnabled || streamInterceptorsActive) {
 		upstreamHeaders = make(http.Header)
 	}
