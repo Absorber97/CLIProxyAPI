@@ -371,11 +371,10 @@ func TestXAIExecutorPrepareResponsesRequestRewritesCodexAgentMessage(t *testing.
 	if message.Get("content.1.encrypted_content").Exists() {
 		t.Fatalf("encrypted_content was preserved: %s", prepared.body)
 	}
-	if message.Get("id").String() != "amsg_019f92c3-6d77-7880-a6e4-f920867dc6a0" || message.Get("author").String() != "/root" || message.Get("recipient").String() != "/root/arithmetic_question" {
-		t.Fatalf("agent message identity fields changed: %s", prepared.body)
-	}
-	if turnID := message.Get("internal_chat_message_metadata_passthrough.turn_id").String(); turnID != "019f92c3-6772-7213-8aac-8bd154d528f1" {
-		t.Fatalf("turn_id = %q; body=%s", turnID, prepared.body)
+	for _, field := range []string{"id", "author", "recipient", "internal_chat_message_metadata_passthrough"} {
+		if message.Get(field).Exists() {
+			t.Fatalf("agent_message-only field %q was preserved: %s", field, prepared.body)
+		}
 	}
 }
 

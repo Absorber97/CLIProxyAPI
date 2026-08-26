@@ -103,7 +103,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
 	rawResponseHeaders := cloneHeader(resp.Headers)
 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, PassthroughHeadersEnabled(h.Cfg))
 	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), responseProtocol, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID)
-	responseHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol).apply(responseHeaders)
+	responseHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol, rawResponseHeaders).apply(responseHeaders)
 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
 	return body, responseHeaders, nil
 }

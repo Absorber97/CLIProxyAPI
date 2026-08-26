@@ -123,3 +123,29 @@ func TestRouteReceiptCaptureKeepsExistingCallbacks(t *testing.T) {
 		t.Fatalf("capture missed the auth id: %q", authID)
 	}
 }
+
+func TestRouteReceiptUsesOmniRouteLeafOnlyForNamedCompatibilityRoute(t *testing.T) {
+	meta := map[string]any{
+		coreexecutor.SelectedAuthProviderMetadataKey: "openai-compatible-codex-omniroute",
+	}
+	upstream := http.Header{
+		"X-Omniroute-Provider": []string{"cx"},
+		"X-Omniroute-Model":    []string{"gpt-5.6-luna"},
+	}
+	headers := newRouteReceipt(meta, nil, "req-omni", "omni-gpt-luna", "omni-gpt-luna", "openai-responses", "openai-responses", upstream).apply(nil)
+	if got := headers.Get(RouteProviderHeader); got != "cx" {
+		t.Fatalf("provider = %q, want cx", got)
+	}
+	if got := headers.Get(RouteModelHeader); got != "gpt-5.6-luna" {
+		t.Fatalf("model = %q, want gpt-5.6-luna", got)
+	}
+
+	meta[coreexecutor.SelectedAuthProviderMetadataKey] = "openai-compatible-other"
+	headers = newRouteReceipt(meta, nil, "req-other", "omni-gpt-luna", "omni-gpt-luna", "openai-responses", "openai-responses", upstream).apply(nil)
+	if got := headers.Get(RouteProviderHeader); got != "openai-compatible-other" {
+		t.Fatalf("non-OmniRoute provider trusted spoofed leaf: %q", got)
+	}
+	if got := headers.Get(RouteModelHeader); got != "omni-gpt-luna" {
+		t.Fatalf("non-OmniRoute model trusted spoofed leaf: %q", got)
+	}
+}

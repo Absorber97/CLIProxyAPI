@@ -45,6 +45,26 @@ func TestApplyThinkingWithModelInfoMapsCrossFamilyHighIntent(t *testing.T) {
 	}
 }
 
+func TestApplyThinkingWithModelInfoPreservesGPT56SolUltra(t *testing.T) {
+	modelInfo := registry.LookupModelInfo("gpt-5.6-sol")
+	body := []byte(`{"reasoning":{"effort":"ultra"}}`)
+	out, err := thinking.ApplyThinkingWithModelInfo(
+		body,
+		body,
+		"gpt-5.6-sol",
+		"openai-response",
+		"openai-response",
+		"codex",
+		modelInfo,
+	)
+	if err != nil {
+		t.Fatalf("ApplyThinkingWithModelInfo() error = %v", err)
+	}
+	if got := gjson.GetBytes(out, "reasoning.effort").String(); got != "ultra" {
+		t.Fatalf("reasoning.effort = %q, want ultra", got)
+	}
+}
+
 func TestApplyThinkingWithModelInfoMapsOpenAICompatibilityHighIntent(t *testing.T) {
 	modelInfo := &registry.ModelInfo{
 		ID:       "compat-upstream",

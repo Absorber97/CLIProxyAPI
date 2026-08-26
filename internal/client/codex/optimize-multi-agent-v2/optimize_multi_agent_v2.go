@@ -771,6 +771,12 @@ func rewriteCodexAgentMessageInput(payload []byte) []byte {
 		if errSet != nil {
 			return payload
 		}
+		for _, field := range []string{"id", "author", "recipient", "internal_chat_message_metadata_passthrough"} {
+			updated, errSet = sjson.DeleteBytes(updated, itemPath+"."+field)
+			if errSet != nil {
+				return payload
+			}
+		}
 	}
 	return updated
 }

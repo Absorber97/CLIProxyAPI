@@ -504,11 +504,10 @@ func TestRewriteCodexMultiAgentV2InputRewritesAgentMessage(t *testing.T) {
 	if encrypted := gjson.GetBytes(got, "input.0.content.1.encrypted_content"); encrypted.Exists() {
 		t.Fatalf("content[1].encrypted_content was preserved: %s", got)
 	}
-	if author := gjson.GetBytes(got, "input.0.author").String(); author != "/root" {
-		t.Fatalf("author = %q, want /root", author)
-	}
-	if turnID := gjson.GetBytes(got, "input.0.internal_chat_message_metadata_passthrough.turn_id").String(); turnID != "019f92ae-7eae-7371-957e-8f6f734edddc" {
-		t.Fatalf("turn_id = %q", turnID)
+	for _, field := range []string{"id", "author", "recipient", "internal_chat_message_metadata_passthrough"} {
+		if gjson.GetBytes(got, "input.0."+field).Exists() {
+			t.Fatalf("agent_message-only field %q was preserved: %s", field, got)
+		}
 	}
 }
 
