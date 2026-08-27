@@ -181,7 +181,9 @@ func IsCodexClientUserAgent(userAgent string) bool {
 	return strings.HasPrefix(userAgent, "Codex Desktop/") ||
 		strings.HasPrefix(userAgent, "codex-tui/") ||
 		userAgent == "codex_cli_rs" ||
-		strings.HasPrefix(userAgent, "codex_cli_rs/")
+		strings.HasPrefix(userAgent, "codex_cli_rs/") ||
+		userAgent == "codex_exec" ||
+		strings.HasPrefix(userAgent, "codex_exec/")
 }
 
 func isCodexMultiAgentClient(userAgent string) bool {
@@ -768,6 +770,12 @@ func rewriteCodexAgentMessageInput(payload []byte) []byte {
 		updated, errSet = sjson.SetBytes(updated, itemPath+".type", "message")
 		if errSet != nil {
 			return payload
+		}
+		for _, field := range []string{"id", "author", "recipient", "internal_chat_message_metadata_passthrough"} {
+			updated, errSet = sjson.DeleteBytes(updated, itemPath+"."+field)
+			if errSet != nil {
+				return payload
+			}
 		}
 	}
 	return updated

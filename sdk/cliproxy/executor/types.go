@@ -36,6 +36,10 @@ const (
 	PinnedAuthMetadataKey = "pinned_auth_id"
 	// SelectedAuthMetadataKey stores the auth ID selected by the scheduler.
 	SelectedAuthMetadataKey = "selected_auth_id"
+	// SelectedAuthProviderMetadataKey stores the upstream provider key of the selected auth.
+	SelectedAuthProviderMetadataKey = "selected_auth_provider"
+	// SelectedAuthProviderCallbackMetadataKey carries an optional callback invoked with the selected auth provider.
+	SelectedAuthProviderCallbackMetadataKey = "selected_auth_provider_callback"
 	// SelectedAuthCallbackMetadataKey carries an optional callback invoked with the selected auth ID.
 	SelectedAuthCallbackMetadataKey = "selected_auth_callback"
 	// SelectedAuthIndexMetadataKey stores the stable index of the auth selected by the scheduler.
@@ -144,6 +148,25 @@ func (e *RequestTerminatedError) ResponseBody() []byte {
 	return append([]byte(nil), e.Body...)
 }
 
+// WebSocketResponseEvent describes an upstream WebSocket response event received during execution.
+type WebSocketResponseEvent struct {
+	RequestID      string
+	TraceID        string
+	SourceFormat   string
+	Model          string
+	RequestedModel string
+	Provider       string
+	AuthID         string
+	AuthLabel      string
+	AuthType       string
+	EventType      string
+	Payload        []byte
+	Metadata       map[string]any
+}
+
+// WebSocketResponseObserver receives upstream WebSocket response events during execution.
+type WebSocketResponseObserver func(context.Context, WebSocketResponseEvent)
+
 // Options controls execution behavior for both streaming and non-streaming calls.
 type Options struct {
 	// Stream toggles streaming mode.
@@ -165,6 +188,8 @@ type Options struct {
 	Metadata map[string]any
 	// RequestAfterAuthInterceptor runs after credential selection and before executor translation.
 	RequestAfterAuthInterceptor RequestAfterAuthInterceptor
+	// WebSocketResponseObserver receives upstream WebSocket response events during execution.
+	WebSocketResponseObserver WebSocketResponseObserver
 	// ExecutionLifecycle owns Home-dispatched execution resources. Executors must not add it to request metadata.
 	ExecutionLifecycle ExecutionLifecycle
 }

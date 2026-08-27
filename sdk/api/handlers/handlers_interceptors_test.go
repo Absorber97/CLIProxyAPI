@@ -21,11 +21,12 @@ import (
 )
 
 type handlerInterceptorTestHost struct {
-	interceptRequestBeforeAuth func(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse
-	interceptRequestAfterAuth  func(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse
-	interceptResponse          func(context.Context, pluginapi.ResponseInterceptRequest) pluginapi.ResponseInterceptResponse
-	interceptStreamChunk       func(context.Context, pluginapi.StreamChunkInterceptRequest) pluginapi.StreamChunkInterceptResponse
-	completeRequest            func(context.Context, pluginapi.RequestCompletion)
+	interceptRequestBeforeAuth    func(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse
+	interceptRequestAfterAuth     func(context.Context, pluginapi.RequestInterceptRequest) pluginapi.RequestInterceptResponse
+	interceptResponse             func(context.Context, pluginapi.ResponseInterceptRequest) pluginapi.ResponseInterceptResponse
+	interceptStreamChunk          func(context.Context, pluginapi.StreamChunkInterceptRequest) pluginapi.StreamChunkInterceptResponse
+	observeWebSocketResponseEvent func(context.Context, pluginapi.WebSocketResponseEvent)
+	completeRequest               func(context.Context, pluginapi.RequestCompletion)
 	// includeStreamChunkRequestBodies simulates legacy schema_version < 3 plugins.
 	includeStreamChunkRequestBodies bool
 }
@@ -89,6 +90,12 @@ func (h *handlerInterceptorTestHost) InterceptStreamChunk(ctx context.Context, r
 func (h *handlerInterceptorTestHost) CompleteRequest(ctx context.Context, completion pluginapi.RequestCompletion) {
 	if h != nil && h.completeRequest != nil {
 		h.completeRequest(ctx, completion)
+	}
+}
+
+func (h *handlerInterceptorTestHost) ObserveWebSocketResponseEvent(ctx context.Context, event pluginapi.WebSocketResponseEvent) {
+	if h != nil && h.observeWebSocketResponseEvent != nil {
+		h.observeWebSocketResponseEvent(ctx, event)
 	}
 }
 
@@ -1056,6 +1063,50 @@ func TestHandlerStreamInterceptorRewritesAndDropsChunks(t *testing.T) {
 	}
 }
 
+func TestHandlerStreamRouteReceiptUsesImmutableOmniRouteHeaders(t *testing.T) {
+	model := "omni-gpt-sol"
+	executor := &interceptorCaptureExecutor{
+		provider: "openai-compatible-codex-omniroute",
+		stream: func(ctx context.Context, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (*coreexecutor.StreamResult, error) {
+			chunks := make(chan coreexecutor.StreamChunk, 1)
+			chunks <- coreexecutor.StreamChunk{Payload: []byte("data: [DONE]\n\n")}
+			close(chunks)
+			return &coreexecutor.StreamResult{
+				Headers: http.Header{
+					"Content-Type":         []string{"text/event-stream"},
+					"X-Omniroute-Provider": []string{"cx"},
+					"X-Omniroute-Model":    []string{"gpt-5.6-sol"},
+				},
+				Chunks: chunks,
+			}, nil
+		},
+	}
+	handler := newInterceptorHandler(t, model, executor, &sdkconfig.SDKConfig{PassthroughHeaders: false})
+	handler.SetPluginHost(&handlerInterceptorTestHost{
+		interceptStreamChunk: func(ctx context.Context, req pluginapi.StreamChunkInterceptRequest) pluginapi.StreamChunkInterceptResponse {
+			return pluginapi.StreamChunkInterceptResponse{
+				Headers: http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:    cloneBytes(req.Body),
+			}
+		},
+	})
+
+	dataChan, headers, errChan := handler.ExecuteStreamWithAuthManager(context.Background(), "openai", model, []byte(fmt.Sprintf(`{"model":%q}`, model)), "")
+	for range dataChan {
+	}
+	for errMsg := range errChan {
+		if errMsg != nil {
+			t.Fatalf("stream error = %+v", errMsg)
+		}
+	}
+	if got := headers.Get(RouteProviderHeader); got != "cx" {
+		t.Fatalf("route provider = %q, want cx from immutable upstream headers", got)
+	}
+	if got := headers.Get(RouteModelHeader); got != "gpt-5.6-sol" {
+		t.Fatalf("route model = %q, want gpt-5.6-sol from immutable upstream headers", got)
+	}
+}
+
 func TestHandlerStreamInterceptorLegacySchemaClonesRequestBodiesOnPayloadChunks(t *testing.T) {
 	model := "handler-interceptor-stream-legacy-clone-model"
 	executor := &interceptorCaptureExecutor{
@@ -1222,9 +1273,7 @@ func TestHandlerStreamSkipsInterceptorsWhenHostReportsNoStreamInterceptors(t *te
 	if string(got) != "payload" {
 		t.Fatalf("stream payload = %q, want payload", got)
 	}
-	if upstreamHeaders != nil {
-		t.Fatalf("upstream headers = %#v, want nil without passthrough or stream interceptors", upstreamHeaders)
-	}
+	assertOnlyRouteReceiptHeaders(t, upstreamHeaders)
 	if streamCalls != 0 {
 		t.Fatalf("stream interceptor calls = %d, want 0", streamCalls)
 	}
@@ -1479,5 +1528,64 @@ func TestHandlerResponseInterceptorSeesRawHeadersWhenPassthroughDisabled(t *test
 	}
 	if headers.Get("X-Upstream") != "" {
 		t.Fatalf("headers leaked raw upstream header with passthrough disabled: %#v", headers)
+	}
+}
+
+func TestHandlerWebSocketResponseObserverForwardsToPluginHost(t *testing.T) {
+	model := "handler-ws-observer-model"
+	var observed []pluginapi.WebSocketResponseEvent
+	executor := &interceptorCaptureExecutor{
+		execute: func(ctx context.Context, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) (coreexecutor.Response, error) {
+			if opts.WebSocketResponseObserver != nil {
+				opts.WebSocketResponseObserver(ctx, coreexecutor.WebSocketResponseEvent{
+					SourceFormat: opts.SourceFormat.String(),
+					Model:        req.Model,
+					Provider:     "codex",
+					AuthID:       "auth-test",
+					EventType:    "codex.rate_limits",
+					Payload:      []byte(`{"type":"codex.rate_limits"}`),
+				})
+			}
+			return coreexecutor.Response{Payload: []byte(`{"id":"resp-1"}`)}, nil
+		},
+	}
+	handler := newInterceptorHandler(t, model, executor, nil)
+	handler.SetPluginHost(&handlerInterceptorTestHost{
+		observeWebSocketResponseEvent: func(ctx context.Context, event pluginapi.WebSocketResponseEvent) {
+			observed = append(observed, event)
+		},
+	})
+
+	_, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai", model, []byte(fmt.Sprintf(`{"model":%q}`, model)), "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager() error = %+v", errMsg)
+	}
+
+	if len(observed) != 1 {
+		t.Fatalf("observed %d events, want 1", len(observed))
+	}
+	if observed[0].EventType != "codex.rate_limits" {
+		t.Fatalf("EventType = %q, want codex.rate_limits", observed[0].EventType)
+	}
+	if observed[0].AuthID != "auth-test" {
+		t.Fatalf("AuthID = %q, want auth-test", observed[0].AuthID)
+	}
+	if observed[0].RequestID == "" {
+		t.Fatal("RequestID is empty, want populated request ID")
+	}
+}
+
+// assertOnlyRouteReceiptHeaders fails when any header other than the CPA-managed
+// route receipt reaches the client, which is what disabled passthrough means now
+// that every response carries route evidence.
+func assertOnlyRouteReceiptHeaders(t *testing.T, headers http.Header) {
+	t.Helper()
+	for name := range headers {
+		if !IsCPAReservedResponseHeader(name) {
+			t.Fatalf("upstream header %q leaked with passthrough disabled", name)
+		}
+	}
+	if headers.Get(RouteProviderHeader) == "" {
+		t.Fatal("route provider evidence is missing")
 	}
 }

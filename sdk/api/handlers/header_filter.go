@@ -44,6 +44,15 @@ var cpaReservedResponseHeaders = map[string]struct{}{
 	"Access-Control-Expose-Headers":    {},
 	"Access-Control-Max-Age":           {},
 	"X-Cpa-Trace-Id":                   {},
+	// Route receipt headers are proof of which upstream served the request, so an
+	// upstream must never be able to supply its own.
+	"X-Cpa-Route-Receipt":         {},
+	"X-Cpa-Route-Provider":        {},
+	"X-Cpa-Route-Model":           {},
+	"X-Cpa-Route-Requested-Model": {},
+	"X-Cpa-Route-Source-Format":   {},
+	"X-Cpa-Route-Target-Format":   {},
+	"X-Cpa-Route-Account":         {},
 }
 
 // IsCPAReservedResponseHeader reports whether a downstream response header is managed by CPA.

@@ -71,6 +71,8 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
 		Payload: payload,
 	}
 	afterAuthCapture := &requestAfterAuthCapture{}
+	receiptCapture := &routeReceiptCapture{}
+	receiptCapture.install(reqMeta)
 	lifecycle := h.newRequestLifecycleTracker(ctx, entryProtocol, normalizedModel, originalRequestedModel, false, reqMeta, execOptions.SkipInterceptorPluginID)
 	opts := coreexecutor.Options{
 		Stream:                      false,
@@ -81,6 +83,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
 		Headers:                     modelExecutionHeaders(ctx, execOptions.Headers),
 		Query:                       modelExecutionQuery(ctx, execOptions.Query),
 		RequestAfterAuthInterceptor: h.requestAfterAuthInterceptor(afterAuthCapture, lifecycle.requestID(), execOptions.SkipInterceptorPluginID),
+		WebSocketResponseObserver:   h.webSocketResponseObserver(lifecycle.requestID(), execOptions.SkipInterceptorPluginID),
 	}
 	opts.Metadata = reqMeta
 	var interceptErr *interfaces.ErrorMessage
@@ -100,6 +103,7 @@ func (h *BaseAPIHandler) executeWithAuthManagerFormats(ctx context.Context, entr
 	rawResponseHeaders := cloneHeader(resp.Headers)
 	responseHeaders := downstreamHeadersFromExecutor(rawResponseHeaders, PassthroughHeadersEnabled(h.Cfg))
 	body, responseHeaders := h.applyResponseInterceptors(ctx, lifecycle.requestID(), responseProtocol, normalizedModel, originalRequestedModel, executedOpts, rawResponseHeaders, responseHeaders, executedOpts.OriginalRequest, executedReq.Payload, resp.Payload, http.StatusOK, execOptions.SkipInterceptorPluginID)
+	responseHeaders = newRouteReceipt(reqMeta, receiptCapture, lifecycle.requestID(), normalizedModel, originalRequestedModel, entryProtocol, responseProtocol, rawResponseHeaders).apply(responseHeaders)
 	lifecycle.complete(pluginapi.RequestCompletionSucceeded, http.StatusOK, nil)
 	return body, responseHeaders, nil
 }
@@ -145,6 +149,7 @@ func (h *BaseAPIHandler) executeCountWithAuthManager(ctx context.Context, handle
 		Headers:                     modelExecutionHeaders(ctx, execOptions.Headers),
 		Query:                       modelExecutionQuery(ctx, execOptions.Query),
 		RequestAfterAuthInterceptor: h.requestAfterAuthInterceptor(afterAuthCapture, lifecycle.requestID(), execOptions.SkipInterceptorPluginID),
+		WebSocketResponseObserver:   h.webSocketResponseObserver(lifecycle.requestID(), execOptions.SkipInterceptorPluginID),
 	}
 	opts.Metadata = reqMeta
 	var interceptErr *interfaces.ErrorMessage
@@ -264,14 +269,15 @@ func (h *BaseAPIHandler) pluginExecutorRequest(ctx context.Context, entryProtoco
 	}
 	req := coreexecutor.Request{Model: modelName, Payload: payload}
 	opts := coreexecutor.Options{
-		Stream:          stream,
-		Alt:             alt,
-		OriginalRequest: rawJSON,
-		SourceFormat:    sdktranslator.FromString(entryProtocol),
-		ResponseFormat:  sdktranslator.FromString(responseProtocol),
-		Headers:         modelExecutionHeaders(ctx, execOptions.Headers),
-		Query:           modelExecutionQuery(ctx, execOptions.Query),
-		Metadata:        reqMeta,
+		Stream:                    stream,
+		Alt:                       alt,
+		OriginalRequest:           rawJSON,
+		SourceFormat:              sdktranslator.FromString(entryProtocol),
+		ResponseFormat:            sdktranslator.FromString(responseProtocol),
+		Headers:                   modelExecutionHeaders(ctx, execOptions.Headers),
+		Query:                     modelExecutionQuery(ctx, execOptions.Query),
+		WebSocketResponseObserver: h.webSocketResponseObserver("", execOptions.SkipInterceptorPluginID),
+		Metadata:                  reqMeta,
 	}
 	return req, opts
 }

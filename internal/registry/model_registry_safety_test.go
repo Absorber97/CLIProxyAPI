@@ -196,3 +196,16 @@ func TestLookupModelInfoIncludesClaudeSonnet5(t *testing.T) {
 		}
 	}
 }
+
+func TestLookupModelInfoGPT56SolIncludesUltra(t *testing.T) {
+	model := LookupModelInfo("gpt-5.6-sol")
+	if model == nil || model.Thinking == nil {
+		t.Fatalf("expected GPT-5.6 Sol thinking metadata, got %+v", model)
+	}
+	for _, level := range model.Thinking.Levels {
+		if level == "ultra" {
+			return
+		}
+	}
+	t.Fatalf("GPT-5.6 Sol thinking levels = %+v, want ultra", model.Thinking.Levels)
+}

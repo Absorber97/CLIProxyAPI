@@ -52,6 +52,37 @@ func TestPrepareCodexMultiAgentV2ToolsAtResponsesBoundary(t *testing.T) {
 	}
 }
 
+func TestPrepareCodexMultiAgentV2ToolsPreservesNativeCodexSchemaForNonCompatModel(t *testing.T) {
+	t.Parallel()
+
+	const modelID = "omni-native-codex-collaboration-test"
+	const clientID = "omni-native-codex-collaboration-client"
+	registry.GetGlobalRegistry().RegisterClient(clientID, "openai-compatibility", []*registry.ModelInfo{{
+		ID:       modelID,
+		IsCompat: false,
+	}})
+	t.Cleanup(func() {
+		registry.GetGlobalRegistry().UnregisterClient(clientID)
+	})
+
+	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{CodexOptimizeMultiAgentV2: true}, nil)
+	handler := NewOpenAIResponsesAPIHandler(base)
+	request := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	request.Header.Set("User-Agent", "codex_cli_rs/0.149.0")
+	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginContext.Request = request
+
+	payload := []byte(`{"model":"` + modelID + `","tools":[{"type":"namespace","name":"collaboration","tools":[{"type":"function","name":"followup_task","strict":false,"parameters":{"type":"object","properties":{"message":{"type":"string","encrypted":true},"target":{"type":"string"}},"required":["target","message"],"additionalProperties":false}}]}]}`)
+	got := handler.prepareCodexMultiAgentV2Tools(ginContext, payload)
+
+	if string(got) != string(payload) {
+		t.Fatalf("native Codex collaboration schema changed: %s", got)
+	}
+	if _, exists := ginContext.Get(multiagentv2.CodexMultiAgentV2ToolsPreparedContextKey); exists {
+		t.Fatal("native Codex collaboration schema was marked prepared")
+	}
+}
+
 func TestResponsesPreparesCodexMultiAgentV2ToolsForHTTPAndSSE(t *testing.T) {
 	t.Parallel()
 
