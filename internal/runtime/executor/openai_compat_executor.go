@@ -171,6 +171,26 @@ func (identity *openAICompatCodexIdentity) applyTo(headers http.Header) {
 	}
 }
 
+// stampNativeCodexPassthroughForVerifiedClient marks a native Responses body so
+// OmniRoute chatgpt-web-codex can admit the request. Only runs for non-compat
+// Responses forwarding when the inbound client proved Codex identity.
+func stampNativeCodexPassthroughForVerifiedClient(payload []byte, headers http.Header, endpoint string, isCompat bool) []byte {
+	if isCompat || endpoint != "/responses" || len(payload) == 0 {
+		return payload
+	}
+	if extractProvenIncomingCodexIdentity(headers) == nil {
+		return payload
+	}
+	if gjson.GetBytes(payload, "_nativeCodexPassthrough").Bool() {
+		return payload
+	}
+	updated, err := sjson.SetBytes(payload, "_nativeCodexPassthrough", true)
+	if err != nil {
+		return payload
+	}
+	return updated
+}
+
 // Identifier implements cliproxyauth.ProviderExecutor.
 func (e *OpenAICompatExecutor) Identifier() string { return e.provider }
 
@@ -258,6 +278,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 		}
 		translated = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "openai compat executor", translated)
 	}
+	translated = stampNativeCodexPassthroughForVerifiedClient(translated, opts.Headers, target.endpoint, isCompat)
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	url := strings.TrimSuffix(baseURL, "/") + target.endpoint
@@ -475,6 +496,7 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 	if to == sdktranslator.FormatOpenAI {
 		translated = helps.SetBoolIfDifferent(translated, "stream_options.include_usage", true)
 	}
+	translated = stampNativeCodexPassthroughForVerifiedClient(translated, opts.Headers, target.endpoint, isCompat)
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	url := strings.TrimSuffix(baseURL, "/") + target.endpoint

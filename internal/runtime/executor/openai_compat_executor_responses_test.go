@@ -568,6 +568,105 @@ func TestOpenAICompatExecutorResponsesPreservesCodexTurnMetadata(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatExecutorResponsesStampsNativeCodexPassthroughForVerifiedClient(t *testing.T) {
+	var upstreamBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed","model":"omni-gpt-web","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	executor := NewOpenAICompatExecutor("openai-compatible-codex-omniroute", &config.Config{})
+	request := []byte(openAICompatTurnMetadataRequest)
+	_, err := executor.Execute(context.Background(), openAICompatTestAuth(server.URL), cliproxyexecutor.Request{
+		Model:   "omni-gpt-web",
+		Payload: request,
+		Metadata: map[string]any{
+			openAICompatResolvedModelInfoKey: &registry.ModelInfo{IsCompat: false},
+		},
+	}, cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAIResponse,
+		ResponseFormat:  sdktranslator.FormatOpenAIResponse,
+		OriginalRequest: request,
+		Headers:         http.Header{"User-Agent": []string{"codex_exec/0.1.0"}, "Originator": []string{"codex_exec"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !gjson.GetBytes(upstreamBody, "_nativeCodexPassthrough").Bool() {
+		t.Fatalf("_nativeCodexPassthrough missing or false; body=%s", upstreamBody)
+	}
+}
+
+func TestOpenAICompatExecutorResponsesOmitsNativeCodexPassthroughWithoutCodexIdentity(t *testing.T) {
+	var upstreamBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed","model":"omni-gpt-web","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	executor := NewOpenAICompatExecutor("openai-compatible-codex-omniroute", &config.Config{})
+	request := []byte(openAICompatTurnMetadataRequest)
+	_, err := executor.Execute(context.Background(), openAICompatTestAuth(server.URL), cliproxyexecutor.Request{
+		Model:   "omni-gpt-web",
+		Payload: request,
+		Metadata: map[string]any{
+			openAICompatResolvedModelInfoKey: &registry.ModelInfo{IsCompat: false},
+		},
+	}, cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAIResponse,
+		ResponseFormat:  sdktranslator.FormatOpenAIResponse,
+		OriginalRequest: request,
+		Headers:         http.Header{"User-Agent": []string{"curl/8.7.1"}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if gjson.GetBytes(upstreamBody, "_nativeCodexPassthrough").Exists() {
+		t.Fatalf("_nativeCodexPassthrough must stay unset without Codex identity; body=%s", upstreamBody)
+	}
+}
+
+func TestOpenAICompatExecutorResponsesStreamStampsNativeCodexPassthroughForVerifiedClient(t *testing.T) {
+	var upstreamBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","status":"completed","model":"omni-gpt-web","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"))
+	}))
+	defer server.Close()
+
+	executor := NewOpenAICompatExecutor("openai-compatible-codex-omniroute", &config.Config{})
+	request := []byte(`{"model":"omni-gpt-web","input":[{"role":"user","content":"hello"}],"stream":true,"client_metadata":{"x-codex-turn-metadata":{"thread_id":"thread_abc123","turn_id":"turn_def456"}}}`)
+	result, err := executor.ExecuteStream(context.Background(), openAICompatTestAuth(server.URL), cliproxyexecutor.Request{
+		Model:   "omni-gpt-web",
+		Payload: request,
+		Metadata: map[string]any{
+			openAICompatResolvedModelInfoKey: &registry.ModelInfo{IsCompat: false},
+		},
+	}, cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAIResponse,
+		ResponseFormat:  sdktranslator.FormatOpenAIResponse,
+		OriginalRequest: request,
+		Stream:          true,
+		Headers:         http.Header{"User-Agent": []string{"codex_exec/0.1.0"}, "Originator": []string{"codex_exec"}},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream() error = %v", err)
+	}
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream error = %v", chunk.Err)
+		}
+	}
+	if !gjson.GetBytes(upstreamBody, "_nativeCodexPassthrough").Bool() {
+		t.Fatalf("_nativeCodexPassthrough missing or false; body=%s", upstreamBody)
+	}
+}
+
 func TestOpenAICompatExecutorResponsesPreservesNativeCodexTurnEnvironment(t *testing.T) {
 	var upstreamBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
